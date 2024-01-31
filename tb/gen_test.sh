@@ -4,16 +4,29 @@ if [ "$#" -ne 1 ]; then
     echo "Must specify 1 file name"
     exit -1
 else
-    if ! [ -f "../rtl/$1.v" ]; then
-        echo "Module file $1.v does not exist in ../rtl"
-        exit -1
-    fi
-
     if [ -d ./$1_test ]; then
         echo "Testbench $1_test already exists"
         exit -1
     fi
+
+    if ! which iverilog >/dev/null; then
+        echo "iverilog is not installed"
+        exit -1
+    fi
+
+    if ! which vvp >/dev/null; then
+        echo "vvp is not installed"
+        exit -1
+    fi
+
+    if ! which cocotb-config >/dev/null; then
+        echo "cocotb-config is not installed"
+        exit -1
+    fi
 fi
+
+COCOTB_LIB_DIR=$(cocotb-config --lib-dir)
+COCOTB_LIB_NAME=$(cocotb-config --lib-name vpi icarus)
 
 mkdir -p $1_test
 
@@ -27,10 +40,10 @@ ICARUS_RUNTIME = vvp
 VERILATOR_COMP = verilator
 
 # can be queried with: cocotb-config --lib-dir
-COCOTB_LIB_DIR = /usr/local/lib/python3.10/dist-packages/cocotb/libs
+COCOTB_LIB_DIR = %%%1
 
 # can be quried with: cocotb-config --lib-name vpi icarus
-COCOTB_LIB_NAME = libcocotbvpi_icarus
+COCOTB_LIB_NAME = %%%2
 
 # the build directory
 SIM_BUILD = sim_build
@@ -40,10 +53,16 @@ OBJ_DIR = obj_dir
 ICARUS_COMP_FLAGS = -o $(SIM_BUILD)/sim.vvp -f $(SIM_BUILD)/cmds.f -g2012
 
 # the dut source files
-DUT = %%%%
+DUT = %%%3
 TOPLEVEL = $(DUT)
 MODULE = $(DUT)_test
 VERILOG_SOURCES += ../../rtl/$(DUT).v
+
+# configurable compile parameters:
+# To set the module parameter, use the following command to make:
+# make EXTRA_ARGS="-P <module_name>.<param_name>=<value>"
+# Remove the sim_build directory before make.
+EXTRA_ARGS ?=
 
 # configurable parameters:
 COCOTB_HDL_TIMEUNIT ?= 1ns
@@ -57,7 +76,7 @@ test: $(SIM_BUILD)/sim.vvp
 
 $(SIM_BUILD)/sim.vvp: $(SIM_BUILD)/.tmp $(VERILOG_SOURCES)
 	@echo "+timescale+$(COCOTB_HDL_TIMEUNIT)/$(COCOTB_HDL_TIMEPRECISION)" > $(SIM_BUILD)/cmds.f
-	$(ICARUS_COMP) $(ICARUS_COMP_FLAGS) $(VERILOG_SOURCES)
+	$(ICARUS_COMP) $(ICARUS_COMP_FLAGS) $(EXTRA_ARGS) $(VERILOG_SOURCES)
 
 $(SIM_BUILD)/.tmp:
 	mkdir -p $(SIM_BUILD) && touch $@
@@ -69,8 +88,7 @@ clean:
 	rm -rf __pycache__ $(SIM_BUILD) $(OBJ_DIR) results.xml
 EndOfText
 
-(echo "$MAKEFILE" | sed "s/%%%%/$1/g") >> $1_test/Makefile
-
+(echo "$MAKEFILE" | sed "s:%%%1:$COCOTB_LIB_DIR:g; s:%%%2:$COCOTB_LIB_NAME:g; s:%%%3:$1:g") >> $1_test/Makefile
 
 read -d '\n' PYTHON << 'EndOfText'
 import cocotb
